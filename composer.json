@@ -16,16 +16,16 @@
     },
     "autoload": {
         "psr-4": {
-            "StouteWebSolutions\JarvisErrorReporter\": "src/"
+            "StouteWebSolutions\\JarvisErrorReporter\\": "src/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "StouteWebSolutions\JarvisErrorReporter\JarvisServiceProvider"
+                "StouteWebSolutions\\JarvisErrorReporter\\JarvisServiceProvider"
             ],
             "aliases": {
-                "Jarvis": "StouteWebSolutions\JarvisErrorReporter\Facades\Jarvis"
+                "Jarvis": "StouteWebSolutions\\JarvisErrorReporter\\Facades\\Jarvis"
             }
         }
     },
