@@ -5,7 +5,7 @@ A Laravel package that sends application errors to Jarvis for automatic analysis
 ## Installation
 
 ```bash
-composer require stoutewebsolutions/jarvis-error-reporter
+composer require pstoute/jarvis-error-reporter
 ```
 
 ## Configuration

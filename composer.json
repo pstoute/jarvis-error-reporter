@@ -1,5 +1,5 @@
 {
-    "name": "stoutewebsolutions/jarvis-error-reporter",
+    "name": "pstoute/jarvis-error-reporter",
     "description": "Send Laravel errors to Jarvis for automatic analysis and fixing",
     "keywords": ["laravel", "error-reporting", "jarvis", "autofix"],
     "license": "MIT",
