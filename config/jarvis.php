@@ -3,77 +3,141 @@
 return [
     /*
     |--------------------------------------------------------------------------
-    | Jarvis DSN (Webhook URL)
+    | General Settings
     |--------------------------------------------------------------------------
-    |
-    | The n8n webhook endpoint that receives error reports. This is similar
-    | to Sentry's DSN concept.
-    |
     */
+
+    'enabled' => env('JARVIS_ENABLED', true),
+
     'dsn' => env('JARVIS_DSN'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Project Identifier
-    |--------------------------------------------------------------------------
-    |
-    | A unique slug identifying this project/repo. Used by Jarvis to determine
-    | which repository to work on when fixing errors.
-    |
-    */
     'project' => env('JARVIS_PROJECT'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Environment
-    |--------------------------------------------------------------------------
-    |
-    | The environment name (production, staging, local). Jarvis can use this
-    | to determine whether to auto-fix or just log.
-    |
-    */
     'environment' => env('JARVIS_ENVIRONMENT', env('APP_ENV', 'production')),
 
     /*
     |--------------------------------------------------------------------------
-    | Enabled
+    | Auto-Fix Configuration
     |--------------------------------------------------------------------------
     |
-    | Master switch for error reporting. Set to false to disable entirely.
+    | Control which environments should trigger automatic fix attempts.
+    | You typically want this enabled for production/staging only.
     |
     */
-    'enabled' => env('JARVIS_ENABLED', true),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Auto-fix Environments
-    |--------------------------------------------------------------------------
-    |
-    | Which environments should trigger auto-fix attempts. You probably only
-    | want this for production/staging, not local development.
-    |
-    */
     'autofix_environments' => explode(',', env('JARVIS_AUTOFIX_ENVIRONMENTS', 'production,staging')),
 
     /*
     |--------------------------------------------------------------------------
-    | Sample Rate
+    | Capture Settings
     |--------------------------------------------------------------------------
     |
-    | Float between 0 and 1. Percentage of errors to report. Use this to
-    | reduce noise in high-traffic apps. 1.0 = report everything.
+    | Control what errors are captured and how aggressively.
     |
     */
-    'sample_rate' => (float) env('JARVIS_SAMPLE_RATE', 1.0),
+
+    'capture' => [
+        // Percentage of errors to report (0.0 to 1.0)
+        'sample_rate' => (float) env('JARVIS_SAMPLE_RATE', 1.0),
+
+        // Exception classes that should never be reported
+        'ignored_exceptions' => [
+            Illuminate\Auth\AuthenticationException::class,
+            Illuminate\Auth\Access\AuthorizationException::class,
+            Illuminate\Database\Eloquent\ModelNotFoundException::class,
+            Illuminate\Validation\ValidationException::class,
+            Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class,
+            Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException::class,
+        ],
+    ],
 
     /*
     |--------------------------------------------------------------------------
-    | Ignored Exceptions
+    | Source Code Settings
     |--------------------------------------------------------------------------
     |
-    | Exception classes that should never be reported to Jarvis.
+    | Control how much source code is included in error reports.
+    | WARNING: Sending full file contents may expose proprietary code.
     |
     */
+
+    'source' => [
+        // Include source file contents (helps Claude understand context)
+        'include_contents' => env('JARVIS_INCLUDE_SOURCE', true),
+
+        // Number of lines before/after the error line to include
+        'context_lines' => (int) env('JARVIS_SOURCE_CONTEXT_LINES', 20),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Privacy & Security
+    |--------------------------------------------------------------------------
+    |
+    | Fields that should be redacted before sending to Jarvis.
+    |
+    */
+
+    'privacy' => [
+        'sensitive_fields' => [
+            'password',
+            'password_confirmation',
+            'secret',
+            'token',
+            'api_key',
+            'credit_card',
+            'card_number',
+            'cvv',
+            'ssn',
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Prevent flooding Jarvis with duplicate or excessive errors.
+    |
+    */
+
+    'rate_limit' => [
+        'enabled' => env('JARVIS_RATE_LIMIT', true),
+
+        // Maximum errors to send per minute
+        'max_per_minute' => (int) env('JARVIS_RATE_LIMIT_PER_MINUTE', 10),
+
+        // Seconds to wait before sending same error again (deduplication)
+        'dedup_window_seconds' => (int) env('JARVIS_DEDUP_WINDOW', 60),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Delivery Settings
+    |--------------------------------------------------------------------------
+    |
+    | Control how error reports are sent to your n8n webhook.
+    |
+    */
+
+    'delivery' => [
+        // HTTP timeout for sending reports (in seconds)
+        'timeout' => (int) env('JARVIS_TIMEOUT', 5),
+
+        // Queue name for async sending (null/false for synchronous)
+        'queue' => env('JARVIS_QUEUE', 'default'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Legacy Configuration Keys
+    |--------------------------------------------------------------------------
+    |
+    | For backwards compatibility. These will be deprecated in v2.0.
+    |
+    */
+
+    'sample_rate' => (float) env('JARVIS_SAMPLE_RATE', 1.0),
     'ignored_exceptions' => [
         Illuminate\Auth\AuthenticationException::class,
         Illuminate\Auth\Access\AuthorizationException::class,
@@ -82,15 +146,6 @@ return [
         Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class,
         Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException::class,
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Sensitive Fields
-    |--------------------------------------------------------------------------
-    |
-    | Request fields that should be redacted before sending to Jarvis.
-    |
-    */
     'sensitive_fields' => [
         'password',
         'password_confirmation',
@@ -102,61 +157,8 @@ return [
         'cvv',
         'ssn',
     ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Include File Contents
-    |--------------------------------------------------------------------------
-    |
-    | Whether to include the source file contents in the report. This helps
-    | Claude Code understand context but increases payload size.
-    |
-    */
     'include_source' => env('JARVIS_INCLUDE_SOURCE', true),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Source Context Lines
-    |--------------------------------------------------------------------------
-    |
-    | Number of lines before/after the error line to include for context.
-    |
-    */
     'source_context_lines' => (int) env('JARVIS_SOURCE_CONTEXT_LINES', 20),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Rate Limiting
-    |--------------------------------------------------------------------------
-    |
-    | Prevent flooding Jarvis with duplicate errors.
-    |
-    */
-    'rate_limit' => [
-        'enabled' => env('JARVIS_RATE_LIMIT', true),
-        'max_per_minute' => (int) env('JARVIS_RATE_LIMIT_PER_MINUTE', 10),
-        'dedup_window_seconds' => (int) env('JARVIS_DEDUP_WINDOW', 60),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Timeout
-    |--------------------------------------------------------------------------
-    |
-    | HTTP timeout for sending reports (in seconds). Keep low so errors
-    | don't slow down user requests.
-    |
-    */
     'timeout' => (int) env('JARVIS_TIMEOUT', 5),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Queue Reports
-    |--------------------------------------------------------------------------
-    |
-    | Send reports via queue to avoid blocking requests. Recommended for
-    | production. Set to null/false to send synchronously.
-    |
-    */
     'queue' => env('JARVIS_QUEUE', 'default'),
 ];

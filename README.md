@@ -229,18 +229,92 @@ All data is sent to **your infrastructure** (not a third-party service):
 - Regularly audit what data is being sent
 - Consider different settings for production vs. staging
 
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Your Laravel App                            │
+│                                                                      │
+│  ┌──────────────┐     ┌─────────────────┐     ┌─────────────────┐ │
+│  │   Exception  │────▶│ Jarvis Reporter │────▶│  Queue Worker   │ │
+│  │   Occurs     │     │   (Capture)     │     │  (Optional)     │ │
+│  └──────────────┘     └─────────────────┘     └─────────────────┘ │
+│                              │                         │            │
+└──────────────────────────────┼─────────────────────────┼────────────┘
+                               │                         │
+                               └─────────────────────────┘
+                                         │ HTTP POST
+                                         │ (Error Payload)
+                                         ▼
+                         ┌──────────────────────────────┐
+                         │      n8n Webhook             │
+                         │  (Your Infrastructure)       │
+                         └──────────────────────────────┘
+                                         │
+                          ┌──────────────┴──────────────┐
+                          │                             │
+                          ▼                             ▼
+                  ┌──────────────┐            ┌──────────────────┐
+                  │   GitHub     │            │    NocoDB        │
+                  │   Create     │            │    Track         │
+                  │   Issue      │            │    Issues        │
+                  └──────────────┘            └──────────────────┘
+                          │
+                          ▼
+                  ┌──────────────┐
+                  │   Git Clone  │
+                  │   Repo       │
+                  └──────────────┘
+                          │
+                          ▼
+                  ┌──────────────┐
+                  │ Claude Code  │
+                  │ Analyze &    │
+                  │ Fix Error    │
+                  └──────────────┘
+                          │
+                          ▼
+                  ┌──────────────┐
+                  │  Run Tests   │
+                  └──────────────┘
+                          │
+          ┌───────────────┴───────────────┐
+          ▼                               ▼
+  ┌──────────────┐              ┌──────────────┐
+  │ High         │              │  Medium      │
+  │ Confidence   │              │  Confidence  │
+  │              │              │              │
+  │ Push to      │              │  Create PR   │
+  │ main         │              │  for Review  │
+  └──────────────┘              └──────────────┘
+          │                               │
+          └───────────────┬───────────────┘
+                          │
+                          ▼
+                  ┌──────────────┐
+                  │  ntfy        │
+                  │  Notify You  │
+                  │  (+ rollback)│
+                  └──────────────┘
+```
+
 ## How Auto-Fix Works
 
-1. Your Laravel app throws an exception
-2. Jarvis Error Reporter captures it and sends to your n8n webhook
-3. n8n orchestrates the fix process:
-   - Creates/updates a GitHub issue
-   - Syncs the repo locally
-   - Invokes Claude Code to analyze and fix
-   - Runs tests to verify
-   - Creates a PR (medium confidence) or pushes directly (high confidence)
-   - Updates tracking in NocoDB
-4. You get notified via ntfy with a rollback option
+1. **Error Occurs**: Your Laravel app throws an exception
+2. **Capture**: Jarvis Error Reporter captures comprehensive context
+3. **Queue** (Optional): Job queued for async delivery to prevent blocking
+4. **Send**: HTTP POST to your n8n webhook with full error details
+5. **Orchestrate** (n8n workflow):
+   - Creates/updates GitHub issue with error details
+   - Updates NocoDB tracking
+   - Clones repository locally
+   - Invokes Claude Code with error context
+   - Claude analyzes error and writes fix
+   - Runs automated tests to verify fix
+6. **Deploy**:
+   - **High Confidence**: Push directly to main branch
+   - **Medium Confidence**: Create PR for human review
+7. **Notify**: Send notification via ntfy with rollback option
 
 ## Troubleshooting
 
@@ -335,10 +409,130 @@ curl -X POST YOUR_JARVIS_DSN \
 | **Your infrastructure** | ✗ | ✓ |
 | **Monthly cost** | $26+ | $0 |
 
+## Environment-Specific Setup
+
+### Laravel Forge
+
+**Configuration**:
+1. Add environment variables in Forge dashboard
+2. Configure queue worker:
+   - Navigate to site → Queue
+   - Add worker: `php artisan queue:work --tries=3`
+3. Ensure server can reach your n8n instance (check firewall rules)
+
+**Recommended Settings**:
+```env
+JARVIS_ENABLED=true
+JARVIS_QUEUE=default  # Use queues for async sending
+JARVIS_RATE_LIMIT=true
+```
+
+### Laravel Vapor
+
+**Configuration**:
+1. Add to `vapor.yml`:
+```yaml
+environments:
+  production:
+    variables:
+      JARVIS_DSN: ${JARVIS_DSN}
+      JARVIS_PROJECT: your-project
+      JARVIS_ENABLED: true
+```
+
+2. Add secrets via Vapor CLI:
+```bash
+vapor secret JARVIS_DSN "https://your-n8n-webhook-url"
+```
+
+**Important**:
+- Vapor **requires** queue workers - you cannot send synchronously
+- Consider payload size limits (Vapor has ~6MB limit)
+- Use `JARVIS_INCLUDE_SOURCE=false` if hitting size limits
+
+**Recommended Settings**:
+```env
+JARVIS_QUEUE=default  # Required
+JARVIS_TIMEOUT=10     # Vapor has generous timeouts
+JARVIS_INCLUDE_SOURCE=false  # Reduce payload size
+```
+
+### Docker / Docker Compose
+
+**Configuration**:
+Add to your `docker-compose.yml`:
+
+```yaml
+services:
+  app:
+    environment:
+      - JARVIS_ENABLED=true
+      - JARVIS_DSN=https://n8n.example.com/webhook/autofix
+      - JARVIS_PROJECT=my-project
+
+  queue:
+    # Separate queue worker service
+    build: .
+    command: php artisan queue:work --tries=3
+    environment:
+      - JARVIS_ENABLED=true
+      - JARVIS_DSN=https://n8n.example.com/webhook/autofix
+```
+
+**Network Considerations**:
+- Ensure containers can reach your n8n instance
+- If n8n is also in Docker, use service names for DSN
+- Example: `JARVIS_DSN=http://n8n:5678/webhook/autofix`
+
+### Local Development
+
+**Recommended Approach**: Disable in local, or use separate n8n instance
+
+```env
+# Option 1: Disable entirely
+JARVIS_ENABLED=false
+
+# Option 2: Use local n8n instance
+JARVIS_ENABLED=true
+JARVIS_DSN=http://localhost:5678/webhook/autofix
+JARVIS_PROJECT=my-project-local
+JARVIS_ENVIRONMENT=local
+JARVIS_AUTOFIX_ENVIRONMENTS=  # Don't autofix in local
+```
+
+**Why disable locally?**:
+- Avoids noise from development errors
+- Prevents accidental commits to repos
+- Saves n8n resources
+
+**Testing Locally**:
+```bash
+# Test configuration
+php artisan jarvis:test --sync
+
+# Trigger a test error
+php artisan tinker
+>>> throw new Exception('Test error from tinker');
+```
+
+### Platform-Specific Tips
+
+| Platform | Key Considerations |
+|----------|-------------------|
+| **Forge** | Configure queue workers in dashboard, check firewall |
+| **Vapor** | Must use queues, watch payload size limits |
+| **Envoyer** | Similar to Forge, ensure queue workers restart on deploy |
+| **Heroku** | Add worker dyno, set buildpack, use env vars |
+| **RunCloud** | Configure supervisor for queue, add env vars |
+| **Docker** | Network connectivity, separate queue service |
+| **Kubernetes** | Create separate queue deployment, use ConfigMap/Secrets |
+
 ## Requirements
 
 - PHP 8.1+
 - Laravel 10, 11, or 12
+- Queue worker (recommended for production)
+- n8n instance (cloud or self-hosted)
 
 ## License
 
