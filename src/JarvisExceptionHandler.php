@@ -25,8 +25,13 @@ class JarvisExceptionHandler implements ExceptionHandler
             $this->reporter->capture($e);
         } catch (Throwable $jarvisException) {
             // Don't let Jarvis errors break the app
-            logger()->error('Jarvis reporter failed', [
-                'error' => $jarvisException->getMessage(),
+            logger()->error('Jarvis error reporter failed to capture exception. Check JARVIS_DSN configuration and network connectivity.', [
+                'jarvis_error' => $jarvisException->getMessage(),
+                'jarvis_exception_class' => get_class($jarvisException),
+                'original_exception' => get_class($e),
+                'dsn_configured' => !empty(config('jarvis.dsn')),
+                'jarvis_enabled' => config('jarvis.enabled'),
+                'troubleshooting' => 'Run "php artisan jarvis:test" to diagnose configuration issues',
             ]);
         }
     }

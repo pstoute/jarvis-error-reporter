@@ -33,6 +33,13 @@ class JarvisServiceProvider extends ServiceProvider
             __DIR__ . '/../config/jarvis.php' => config_path('jarvis.php'),
         ], 'jarvis-config');
 
+        // Register commands
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                Commands\JarvisTestCommand::class,
+            ]);
+        }
+
         // Register exception handler if enabled
         if (config('jarvis.enabled') && config('jarvis.dsn')) {
             $this->registerExceptionHandler();

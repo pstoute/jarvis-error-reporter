@@ -45,26 +45,43 @@ class SendJarvisReport implements ShouldQueue
                 ->post($this->config['dsn'], $this->payload);
 
             if (!$response->successful()) {
-                Log::warning('Jarvis error report failed', [
+                Log::warning('Jarvis error report failed. Verify JARVIS_DSN is correct and n8n webhook is accessible.', [
                     'status' => $response->status(),
                     'body' => $response->body(),
                     'project' => $this->config['project'],
+                    'dsn' => parse_url($this->config['dsn'], PHP_URL_HOST),
+                    'error_hash' => $this->payload['error_hash'] ?? 'unknown',
+                    'troubleshooting' => 'Check n8n webhook logs and verify network connectivity',
                 ]);
 
                 // Retry on 5xx errors
                 if ($response->serverError()) {
-                    throw new \RuntimeException('Jarvis server error: ' . $response->status());
+                    throw new \RuntimeException(
+                        'Jarvis n8n webhook returned server error ' . $response->status() .
+                        '. This job will be retried. Check n8n instance health.'
+                    );
                 }
             } else {
-                Log::debug('Jarvis error report sent', [
+                Log::debug('Jarvis error report sent successfully', [
                     'project' => $this->config['project'],
                     'error_hash' => $this->payload['error_hash'] ?? 'unknown',
+                    'environment' => $this->payload['environment'] ?? 'unknown',
+                    'should_autofix' => $this->payload['should_autofix'] ?? false,
                 ]);
             }
         } catch (\Exception $e) {
-            Log::warning('Jarvis error report exception', [
-                'message' => $e->getMessage(),
+            Log::warning('Jarvis error report failed with exception. Check network connectivity and JARVIS_DSN configuration.', [
+                'exception_message' => $e->getMessage(),
+                'exception_class' => get_class($e),
                 'project' => $this->config['project'],
+                'dsn' => parse_url($this->config['dsn'], PHP_URL_HOST) ?? 'invalid',
+                'timeout_config' => $this->config['timeout'] . 's',
+                'troubleshooting' => [
+                    'Verify n8n webhook is running and accessible',
+                    'Check firewall rules between app and n8n',
+                    'Confirm JARVIS_DSN URL is correct',
+                    'Run: php artisan jarvis:test --sync',
+                ],
             ]);
             throw $e; // Retry via queue
         }
@@ -75,10 +92,21 @@ class SendJarvisReport implements ShouldQueue
      */
     public function failed(\Throwable $exception): void
     {
-        Log::error('Jarvis error report permanently failed', [
-            'error' => $exception->getMessage(),
+        Log::error('Jarvis error report permanently failed after all retry attempts. Your n8n webhook did not receive this error.', [
+            'failure_reason' => $exception->getMessage(),
+            'exception_class' => get_class($exception),
             'project' => $this->config['project'],
             'error_hash' => $this->payload['error_hash'] ?? 'unknown',
+            'original_error_class' => $this->payload['error']['class'] ?? 'unknown',
+            'original_error_file' => $this->payload['error']['file'] ?? 'unknown',
+            'retry_attempts' => $this->tries,
+            'action_required' => [
+                'Verify n8n instance is running and accessible',
+                'Check JARVIS_DSN configuration in .env',
+                'Review n8n webhook logs for issues',
+                'Test connectivity: php artisan jarvis:test --sync',
+                'Check Laravel queue worker logs',
+            ],
         ]);
     }
 }
