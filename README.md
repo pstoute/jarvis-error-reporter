@@ -13,7 +13,7 @@ composer require pstoute/jarvis-error-reporter
 Add to your `.env` file:
 
 ```env
-JARVIS_DSN=https://n8n.stoutesystems.com/webhook/autofix
+JARVIS_DSN=https://n8ndomain/webhook/autofix
 JARVIS_PROJECT=your-project-slug
 JARVIS_ENVIRONMENT=production
 JARVIS_ENABLED=true
@@ -61,7 +61,7 @@ php artisan vendor:publish --tag=jarvis-config
 ### Capture an Exception Manually
 
 ```php
-use StouteWebSolutions\JarvisErrorReporter\Facades\Jarvis;
+use Pstoute\JarvisErrorReporter\Facades\Jarvis;
 
 try {
     // risky operation
